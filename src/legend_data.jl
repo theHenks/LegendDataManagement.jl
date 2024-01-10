@@ -69,13 +69,15 @@ get_setup_config(data::LegendData) = getfield(data, :_config)
         LegendTierData(d)
     elseif s == :par
         AnyProps(data_path(d, "par"))
+    elseif s == :jlpar
+        AnyProps(data_path(d, "jlpar"))
     else
         throw(ErrorException("LegendData has no property $s"))
     end
 end
 
 @inline function Base.propertynames(d::LegendData)
-    (:metadata, :tier, :par)
+    (:metadata, :tier, :par, :jlpar)
 end
 
 @inline function Base.propertynames(d::LegendData, private::Bool)
@@ -213,44 +215,124 @@ end
 
 
 """
-    channel_info(data::LegendData, sel::AnyValiditySelection)
+    channelinfo(data::LegendData, sel::AnyValiditySelection)
 
 Get all channel information for the given [`LegendData`](@ref) and
 [`ValiditySelection`](@ref).
 """
-function channel_info(data::LegendData, sel::AnyValiditySelection)
+function channelinfo(data::LegendData, sel::AnyValiditySelection)
     chmap = data.metadata(sel).hardware.configuration.channelmaps
     dpcfg = data.metadata(sel).dataprod.config.analysis
     
-    filtered_keys = Array{Symbol}(filter(k -> haskey(chmap, k), collect(keys(dpcfg))))
+    #filtered_keys = Array{Symbol}(filter(k -> haskey(chmap, k), collect(keys(dpcfg))))
+    channel_keys = collect(keys(chmap))
 
-    # ToDo: Add this to PropDicts.jl
-    _get(d::PropDict, key::Symbol, default) = haskey(d, key) ? d[key] : default
+    _convert_location(l::AbstractString) = (location = Symbol(l), detstring = -1, position = -1, fiber = "")
 
-    function make_row(k::Symbol)
-        fcid::Int = _get(chmap[k].daq, :fcid, -1)
-        rawid::Int = chmap[k].daq.rawid
-        chid = fcid >= 0 ? fcid : rawid
+    function _convert_location(l::PropDict)
         (
-            detector = Symbol(k)::Symbol,
-            channel = chid,
-            fcid = fcid,
-            rawid = rawid,
-            system = Symbol(chmap[k].system)::Symbol,
-            processable = Bool(dpcfg[k].processable)::Bool,
-            usability = (dpcfg[k].usability == "on")::Bool,
-            string = chmap[k].location.string,
-            position = chmap[k].location.position,
-            cc4 = chmap[k].electronics.cc4.id,
-            cc4ch = chmap[k].electronics.cc4.channel,
-            daqcrate = chmap[k].daq.crate,
-            daqcard = chmap[k].daq.card.id,
-            hvcard = chmap[k].voltage.card.id,
-            hvch = chmap[k].voltage.channel,
+            location = :array,
+            detstring = get(l, :string, -1),
+            position = _convert_pos(get(l, :position, -1)),
+            fiber = get(l, :fiber, ""),
         )
     end
 
-    StructArray(make_row.(filtered_keys))
+    _convert_location(l::PropDicts.MissingProperty) = (location = :unkown, detstring = -1, position = -1, fiber = "")
+
+    _convert_pos(p::Integer) = Int(p)
+    _convert_pos(p::AbstractString) = Symbol(p)
+
+    function make_row(k::Symbol)
+        fcid::Int = get(chmap[k].daq, :fcid, -1)
+        rawid::Int = chmap[k].daq.rawid
+        channel::ChannelId = ChannelId(fcid >= 0 ? fcid : rawid)
+
+        detector::DetectorId = DetectorId(k)
+        system::Symbol = Symbol(chmap[k].system)
+        processable::Bool = get(dpcfg[k], :processable, false)
+        usability::Symbol = Symbol(get(dpcfg[k], :usability, :unkown))
+
+        location::Symbol, detstring::Int, position::Union{Int,Symbol}, fiber::StaticString{8} = _convert_location(chmap[k].location)
+
+        cc4::StaticString{8} = get(chmap[k].electronics.cc4, :id, "")
+        cc4ch::Int = get(chmap[k].electronics.cc4, :channel, -1)
+        daqcrate::Int = get(chmap[k].daq, :crate, -1)
+        daqcard::Int = chmap[k].daq.card.id
+        hvcard::Int = get(chmap[k].voltage.card, :id, -1)
+        hvch::Int = get(chmap[k].voltage, :channel, -1)
+
+        return (;
+            detector, channel, fcid, rawid, system, processable, usability,
+            location, detstring, fiber, position, cc4, cc4ch, daqcrate, daqcard, hvcard, hvch
+        )
+    end
+
+    StructArray(make_row.(channel_keys))
+end
+export channelinfo
+
+
+"""
+    channelinfo(data::LegendData, sel::AnyValiditySelection, channel::ChannelId)
+    channelinfo(data::LegendData, sel::AnyValiditySelection, detector::DetectorId)
+
+Get channel information validitiy selection and [`DetectorId`](@ref) resp.
+[`ChannelId`](@ref).
+"""
+function channelinfo(data::LegendData, sel::AnyValiditySelection, channel::ChannelId)
+    chinfo = channelinfo(data, sel)
+    idxs = findall(x -> ChannelId(x) == channel, chinfo.channel)
+    if isempty(idxs)
+        throw(ArgumentError("No channel information found for channel $channel"))
+    elseif length(idxs) > 1
+        throw(ArgumentError("Multiple channel information entries for channel $channel"))
+    else
+        return chinfo[only(idxs)]
+    end
+end
+
+function channelinfo(data::LegendData, sel::AnyValiditySelection, detector::DetectorId)
+    chinfo = channelinfo(data, sel)
+    idxs = findall(x -> DetectorId(x) == detector, chinfo.detector)
+    if isempty(idxs)
+        throw(ArgumentError("No channel information found for detector $detector"))
+    elseif length(idxs) > 1
+        throw(ArgumentError("Multiple channel information entries for detector $detector"))
+    else
+        return chinfo[only(idxs)]
+    end
+end
+
+
+
+function channel_info(data::LegendData, sel::AnyValiditySelection)
+    Base.depwarn(
+        "`channel_info(data::LegendData, sel::AnyValiditySelection)` is deprecated, use `channelinfo(data, sel)` instead (note: output format differs).",
+        ((Base.Core).Typeof(channel_info)).name.mt.name
+    )
+
+    chinfo = channelinfo(data, sel)
+
+    return StructArray(
+        detector = Symbol.(chinfo.detector),
+        channel = Int.(chinfo.channel),
+        fcid = chinfo.fcid,
+        rawid = chinfo.rawid,
+        system = chinfo.system,
+        processable = chinfo.processable,
+        usability = chinfo.usability,
+        location = chinfo.location,
+        string = chinfo.detstring,
+        fiber = chinfo.fiber,
+        position = chinfo.position,
+        cc4 = chinfo.cc4,
+        cc4ch = chinfo.cc4ch,
+        daqcrate = chinfo.daqcrate,
+        daqcard = chinfo.daqcard,
+        hvcard = chinfo.hvcard,
+        hvch = chinfo.hvch,
+    )
 end
 export channel_info
 

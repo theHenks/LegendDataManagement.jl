@@ -14,13 +14,16 @@ using JSON
 using PropDicts
 using PropertyDicts
 using StructArrays
+using Unitful
 
 using Printf: @printf
 
-using IntervalSets: AbstractInterval, ClosedInterval
+using IntervalSets: AbstractInterval, ClosedInterval, leftendpoint, rightendpoint
 using LRUCache: LRU
 using ProgressMeter: @showprogress
 using PropertyFunctions: PropertyFunction, @pf
+using StaticStrings: StaticString
+using Tables: columns
 
 include("filekey.jl")
 include("dataset.jl")
@@ -31,18 +34,7 @@ include("workers.jl")
 include("map_datafiles.jl")
 include("ljl_expressions.jl")
 include("lpy_expressions.jl")
-include("ljl_dataprod.jl")
-include("lpy_dataprod.jl")
-
-
-@static if !isdefined(Base, :get_extension)
-    using Requires
-end
-
-function __init__()
-    @static if !isdefined(Base, :get_extension)
-        @require SolidStateDetectors = "71e43887-2bd9-5f77-aebd-47f656f0a3f0" include("../ext/LegendDataManagementSolidStateDetectorsExt.jl")
-    end
-end
+include("dataprod_config.jl")
+include("calibration_functions.jl")
 
 end # module

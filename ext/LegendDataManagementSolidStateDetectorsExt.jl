@@ -2,13 +2,8 @@
 
 module LegendDataManagementSolidStateDetectorsExt
 
-@static if isdefined(Base, :get_extension)
-    using SolidStateDetectors
-    import SolidStateDetectors.ConstructiveSolidGeometry as CSG
-else
-    using ..SolidStateDetectors
-    import ..SolidStateDetectors.ConstructiveSolidGeometry as CSG
-end
+using SolidStateDetectors
+import SolidStateDetectors.ConstructiveSolidGeometry as CSG
 
 using LegendDataManagement
 using Unitful
@@ -18,7 +13,7 @@ using PropDicts
 const _SSDDefaultNumtype = Float32
 
 """
-    SolidStateDetector[{T<:Real}](data::LegendData, detector::Union{Symbol,AbstractString}
+    SolidStateDetector[{T<:Real}](data::LegendData, detector::DetectorIdLike
     SolidStateDetector[{T<:Real}(::Type{LegendData}, detector_props::AbstractDict)
     SolidStateDetector[{T<:Real}(::Type{LegendData}, json_filename::AbstractString)
 
@@ -26,16 +21,12 @@ LegendDataManagement provides an extension for SolidStateDetectors, a
 `SolidStateDetector` can be constructed from LEGEND metadata  using the
 methods above.
 """
-function SolidStateDetectors.SolidStateDetector(data::LegendData, detector::Union{Symbol,AbstractString})
-    SolidStateDetectors.SolidStateDetector{_SSDDefaultNumtype}(data, Symbol(detector))
+function SolidStateDetectors.SolidStateDetector(data::LegendData, detector::DetectorIdLike)
+    SolidStateDetectors.SolidStateDetector{_SSDDefaultNumtype}(data, detector)
 end
 
-function SolidStateDetectors.SolidStateDetector{T}(data::LegendData, detector::AbstractString) where {T<:Real}
-    SolidStateDetectors.SolidStateDetector{T}(data, Symbol(detector))
-end
-
-function SolidStateDetectors.SolidStateDetector{T}(data::LegendData, detector::Union{AbstractString,Symbol}) where {T<:Real}
-    detector_props = getproperty(data.metadata.hardware.detectors.germanium.diodes, detector)
+function SolidStateDetectors.SolidStateDetector{T}(data::LegendData, detector::DetectorIdLike) where {T<:Real}
+    detector_props = getproperty(data.metadata.hardware.detectors.germanium.diodes, Symbol(detector))
     SolidStateDetector{T}(LegendData, detector_props)
 end
 
